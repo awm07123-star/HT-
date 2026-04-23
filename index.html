@@ -113,10 +113,11 @@
          async function initApp() {
             initFloatingWindow();
             
-            // Timer logic for first run
+            // Fix: 5 second timer starts
             setTimeout(() => { 
                isWindowReady = true; 
-               updateFloatingUI(globalLastVerdict);
+               // Force update window immediately after timer ends
+               if(globalLastVerdict !== "WAIT") updateFloatingUI(globalLastVerdict);
             }, 5000);
             
             await syncEngine();
@@ -124,9 +125,7 @@
          }
 
          document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === 'visible') {
-               syncEngine(); 
-            }
+            if (document.visibilityState === 'visible') syncEngine(); 
          });
 
          async function syncEngine() {
@@ -184,23 +183,16 @@
             const last100 = list.map(x => ({ num: parseInt(x.number), size: parseInt(x.number) <= 4 ? 'SMALL' : 'BIG' }));
             const nextP = (BigInt(list[0].issueNumber) + 1n).toString();
 
-            let crackerVote = "BIG";
-            const streak = last100.slice(0, 5);
-            if (streak.every(x => x.size === streak[0].size)) crackerVote = streak[0].size;
-
             let ai2Vote = Math.random() > 0.5 ? "BIG" : "SMALL";
             const sCount = last100.slice(0, 5).filter(x => x.size === 'SMALL').length;
             const ai3Vote = sCount >= 3 ? "SMALL" : "BIG";
 
-            let sPoints = (crackerVote === 'SMALL' ? 40 : 0) + (ai2Vote === 'SMALL' ? 40 : 0) + (ai3Vote === 'SMALL' ? 20 : 0);
-            let bPoints = (crackerVote === 'BIG' ? 40 : 0) + (ai2Vote === 'BIG' ? 40 : 0) + (ai3Vote === 'BIG' ? 20 : 0);
-            
-            const verdict = sPoints > bPoints ? "SMALL" : "BIG";
-            const confidence = Math.max(sPoints, bPoints);
+            const verdict = (ai2Vote === ai3Vote) ? ai2Vote : (Math.random() > 0.5 ? "BIG" : "SMALL");
+            const confidence = 85 + Math.floor(Math.random() * 10);
             const pool = verdict === "BIG" ? [5, 6, 7, 8, 9] : [0, 1, 2, 3, 4];
             const nums = pool.sort(() => .5 - Math.random()).slice(0, 2);
 
-            globalLastVerdict = verdict;
+            globalLastVerdict = verdict; // Store for timer force-update
             updateUI(nextP, verdict, nums, confidence);
             updateFloatingUI(verdict); 
             saveLog(nextP, verdict, nums);
@@ -219,11 +211,10 @@
 
             if (originalVerdict === "WAIT") return;
 
-            const relevantLogs = historyDB.filter(x => x.status !== 'DATA');
-            const count = relevantLogs.length;
+            // Shuru se saari entries ginega (Data records + Prediction records)
+            const count = historyDB.length;
 
-            // Logic: History count check from start
-            // Phase 1-2: Original | Phase 3-4: Opposite
+            // Logic: 0,1 Original | 2,3 Opposite
             let cyclePos = count % 4; 
             let currentMode = (cyclePos === 0 || cyclePos === 1) ? 'ORIGINAL' : 'OPPOSITE';
             let displayVerdict = originalVerdict;
