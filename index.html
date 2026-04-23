@@ -39,16 +39,16 @@
             cursor: move;
          }
          .float-title { font-size: 10px; color: var(--premium-gold); font-family: 'Orbitron'; margin-bottom: 5px; pointer-events: none; }
-         .float-val { font-size: 28px; font-weight: 900; pointer-events: none; }
+         .float-val { font-size: 32px; font-weight: 900; pointer-events: none; }
       </style>
    </head>
    <body class="p-4 flex flex-col items-center">
 
       <div id="floating-window">
-         <div class="float-title">AI SYSTEM</div>
-         <div id="float-mode" class="text-[9px] font-bold text-blue-400 mb-2 tracking-widest">STARTING...</div>
+         <div class="float-title">SYSTEM STATUS</div>
+         <div id="float-mode" class="text-[10px] font-bold text-blue-400 mb-2">SCANNING...</div>
          <div id="float-prediction" class="float-val text-white italic">WAIT</div>
-         <div id="float-cycle" class="text-[8px] mt-2 text-gray-500 font-bold uppercase">Ready in 5s</div>
+         <div id="float-cycle" class="text-[8px] mt-2 text-gray-500 font-bold uppercase tracking-tighter">History Count: 0</div>
       </div>
 
       <div class="w-full max-w-md space-y-4">
@@ -107,25 +107,17 @@
          let historyDB = JSON.parse(localStorage.getItem('premium_unlimited_db')) || [];
          let lastProcessed = null;
          let totalAnalyzedCount = 0;
-         let isWindowReady = false;
-         let globalLastVerdict = "WAIT";
 
          async function initApp() {
             initFloatingWindow();
-            
-            // Fix: 5 second timer starts
-            setTimeout(() => { 
-               isWindowReady = true; 
-               // Force update window immediately after timer ends
-               if(globalLastVerdict !== "WAIT") updateFloatingUI(globalLastVerdict);
-            }, 5000);
-            
             await syncEngine();
             setInterval(syncEngine, 3000);
          }
 
          document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === 'visible') syncEngine(); 
+            if (document.visibilityState === 'visible') {
+               syncEngine(); 
+            }
          });
 
          async function syncEngine() {
@@ -183,16 +175,22 @@
             const last100 = list.map(x => ({ num: parseInt(x.number), size: parseInt(x.number) <= 4 ? 'SMALL' : 'BIG' }));
             const nextP = (BigInt(list[0].issueNumber) + 1n).toString();
 
+            let crackerVote = "BIG";
+            const streak = last100.slice(0, 5);
+            if (streak.every(x => x.size === streak[0].size)) crackerVote = streak[0].size;
+
             let ai2Vote = Math.random() > 0.5 ? "BIG" : "SMALL";
             const sCount = last100.slice(0, 5).filter(x => x.size === 'SMALL').length;
             const ai3Vote = sCount >= 3 ? "SMALL" : "BIG";
 
-            const verdict = (ai2Vote === ai3Vote) ? ai2Vote : (Math.random() > 0.5 ? "BIG" : "SMALL");
-            const confidence = 85 + Math.floor(Math.random() * 10);
+            let sPoints = (crackerVote === 'SMALL' ? 40 : 0) + (ai2Vote === 'SMALL' ? 40 : 0) + (ai3Vote === 'SMALL' ? 20 : 0);
+            let bPoints = (crackerVote === 'BIG' ? 40 : 0) + (ai2Vote === 'BIG' ? 40 : 0) + (ai3Vote === 'BIG' ? 20 : 0);
+            
+            const verdict = sPoints > bPoints ? "SMALL" : "BIG";
+            const confidence = Math.max(sPoints, bPoints);
             const pool = verdict === "BIG" ? [5, 6, 7, 8, 9] : [0, 1, 2, 3, 4];
             const nums = pool.sort(() => .5 - Math.random()).slice(0, 2);
 
-            globalLastVerdict = verdict; // Store for timer force-update
             updateUI(nextP, verdict, nums, confidence);
             updateFloatingUI(verdict); 
             saveLog(nextP, verdict, nums);
@@ -203,33 +201,28 @@
             const cycleEl = document.getElementById('float-cycle');
             const modeEl = document.getElementById('float-mode');
             
-            if (!isWindowReady) {
-               modeEl.textContent = "CALCULATING...";
-               floatEl.textContent = "WAIT";
-               return;
-            }
+            // System: History ko shuru se ginega (Pending entries ko count karega)
+            // Jin entries ka status 'pending' ya 'WIN/LOSS' hai unhe count karenge
+            const relevantLogs = historyDB.filter(x => x.status !== 'DATA');
+            const count = relevantLogs.length;
 
-            if (originalVerdict === "WAIT") return;
-
-            // Shuru se saari entries ginega (Data records + Prediction records)
-            const count = historyDB.length;
-
-            // Logic: 0,1 Original | 2,3 Opposite
-            let cyclePos = count % 4; 
-            let currentMode = (cyclePos === 0 || cyclePos === 1) ? 'ORIGINAL' : 'OPPOSITE';
+            // Logic: 2 Original (Direct), 2 Opposite. 
+            // 1-2: Original, 3-4: Opposite, 5-6: Original...
+            let phase = count % 4;
+            let currentMode = (phase === 1 || phase === 2) ? 'ORIGINAL' : 'OPPOSITE';
             let displayVerdict = originalVerdict;
 
             if (currentMode === 'OPPOSITE') {
                displayVerdict = (originalVerdict === 'BIG') ? 'SMALL' : 'BIG';
-               floatEl.style.color = '#ff007a';
+               floatEl.style.color = '#ff007a'; // Pink
                modeEl.textContent = 'OPPOSITE GO';
             } else {
-               floatEl.style.color = '#ffcc00';
+               floatEl.style.color = '#ffcc00'; // Gold
                modeEl.textContent = 'ORIGINAL GO';
             }
 
             floatEl.textContent = displayVerdict;
-            cycleEl.textContent = `Analyzed: ${count}`;
+            cycleEl.textContent = `History Count: ${count}`;
          }
 
          function updateUI(p, res, nums, conf) {
