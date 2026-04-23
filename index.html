@@ -18,9 +18,38 @@
          .history-list-scroll::-webkit-scrollbar { width: 5px; }
          .history-list-scroll::-webkit-scrollbar-thumb { background: var(--premium-pink); border-radius: 10px; }
          .stat-card { background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; }
+
+         /* FLOATING WINDOW STYLES */
+         #floating-window {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 2in;
+            height: 2in;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid var(--premium-gold);
+            border-radius: 15px;
+            z-index: 9999;
+            touch-action: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(255, 204, 0, 0.4);
+            cursor: move;
+         }
+         .float-title { font-size: 10px; color: var(--premium-gold); font-family: 'Orbitron'; margin-bottom: 10px; pointer-events: none; }
+         .float-val { font-size: 32px; font-weight: 900; pointer-events: none; }
       </style>
    </head>
    <body class="p-4 flex flex-col items-center">
+
+      <div id="floating-window">
+         <div class="float-title">AI OVERLAY</div>
+         <div id="float-prediction" class="float-val text-white">WAIT</div>
+         <div id="float-cycle" class="text-[8px] mt-2 text-gray-500">INIT...</div>
+      </div>
+
       <div class="w-full max-w-md space-y-4">
          <div class="text-center py-6">
             <h1 class="text-3xl font-black tracking-tighter" style="font-family: 'Orbitron', sans-serif;">
@@ -77,13 +106,16 @@
          let historyDB = JSON.parse(localStorage.getItem('premium_unlimited_db')) || [];
          let lastProcessed = null;
          let totalAnalyzedCount = 0;
+         
+         // Logic for Floating Window
+         let predictionCounter = 0; 
 
          async function initApp() {
-            await syncEngine(); // First load
+            initFloatingWindow();
+            await syncEngine();
             setInterval(syncEngine, 3000);
          }
 
-         // Tab focus aate hi instant sync
          document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === 'visible') {
                syncEngine(); 
@@ -113,14 +145,12 @@
                const actualSize = parseInt(item.number) <= 4 ? 'SMALL' : 'BIG';
 
                if (idx !== -1) {
-                  // Pending entry ko result mein badlo
                   if (historyDB[idx].status === 'pending') {
                      historyDB[idx].status = (historyDB[idx].prediction === actualSize) ? 'WIN' : 'LOSS';
                      historyDB[idx].actual = item.number;
                      changed = true;
                   }
                } else {
-                  // Naya period jo prediction mein nahi tha (Gap filler) -> Mark as DATA
                   historyDB.unshift({
                      period: item.issueNumber,
                      prediction: actualSize,
@@ -133,7 +163,6 @@
             });
 
             if (changed) {
-               // Sort and clean
                historyDB = historyDB.sort((a,b) => b.period.localeCompare(a.period)).slice(0, 100);
                localStorage.setItem('premium_unlimited_db', JSON.stringify(historyDB));
                renderHistory();
@@ -148,7 +177,6 @@
             const last100 = list.map(x => ({ num: parseInt(x.number), size: parseInt(x.number) <= 4 ? 'SMALL' : 'BIG' }));
             const nextP = (BigInt(list[0].issueNumber) + 1n).toString();
 
-            // AI LOGIC (No changes)
             let crackerVote = "BIG";
             const streak = last100.slice(0, 5);
             if (streak.every(x => x.size === streak[0].size)) crackerVote = streak[0].size;
@@ -166,7 +194,29 @@
             const nums = pool.sort(() => .5 - Math.random()).slice(0, 2);
 
             updateUI(nextP, verdict, nums, confidence);
+            updateFloatingUI(verdict); // Handle Floating Window logic
             saveLog(nextP, verdict, nums);
+         }
+
+         function updateFloatingUI(originalVerdict) {
+            const floatEl = document.getElementById('float-prediction');
+            const cycleEl = document.getElementById('float-cycle');
+            
+            // Cycle Logic: 0,1 (Same) | 2,3 (Opposite)
+            let currentMode = (predictionCounter % 4 < 2) ? 'DIRECT' : 'OPPOSITE';
+            let displayVerdict = originalVerdict;
+
+            if (currentMode === 'OPPOSITE') {
+               displayVerdict = (originalVerdict === 'BIG') ? 'SMALL' : 'BIG';
+               floatEl.style.color = '#ff007a'; // Pink for Opposite/Small usually
+            } else {
+               floatEl.style.color = '#ffcc00'; // Gold for Direct/Big
+            }
+
+            floatEl.textContent = displayVerdict;
+            cycleEl.textContent = `MODE: ${currentMode} (${(predictionCounter % 4) + 1}/4)`;
+            
+            predictionCounter++;
          }
 
          function updateUI(p, res, nums, conf) {
@@ -220,6 +270,26 @@
             totalAnalyzedCount = 0;
             updateAnalyzedUI();
             renderHistory();
+         }
+
+         // Draggable Window Script
+         function initFloatingWindow() {
+            const el = document.getElementById('floating-window');
+            let offset = { x: 0, y: 0 };
+
+            el.addEventListener('touchstart', (e) => {
+               const touch = e.touches[0];
+               offset.x = touch.clientX - el.offsetLeft;
+               offset.y = touch.clientY - el.offsetTop;
+            });
+
+            el.addEventListener('touchmove', (e) => {
+               e.preventDefault();
+               const touch = e.touches[0];
+               el.style.left = (touch.clientX - offset.x) + 'px';
+               el.style.top = (touch.clientY - offset.y) + 'px';
+               el.style.right = 'auto'; // Disable right lock once moved
+            });
          }
 
          initApp();
