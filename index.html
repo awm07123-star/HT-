@@ -83,13 +83,19 @@
             setInterval(syncEngine, 3000);
          }
 
+         // BACKGROUND SYNC LOGIC: Jab aap wapas app par aayenge ye turant update karega
+         document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === 'visible') {
+               syncEngine(); 
+            }
+         });
+
          async function fetchHistoricalData() {
             try {
                const response = await fetch(`${API_URL}?t=${Date.now()}`);
                const data = await response.json();
                const list = data.data.list;
                
-               // Load last 10 as DATA (Historical)
                const last10 = list.slice(0, 10);
                last10.reverse().forEach(item => {
                   if (!historyDB.find(x => x.period === item.issueNumber)) {
@@ -98,7 +104,7 @@
                         period: item.issueNumber,
                         prediction: size,
                         numbers: [item.number],
-                        status: 'DATA', // Marked as historical data
+                        status: 'DATA',
                         actual: item.number
                      });
                   }
@@ -118,10 +124,16 @@
                const response = await fetch(`${API_URL}?t=${Date.now()}`);
                const data = await response.json();
                const list = data.data.list;
+               
+               // Background se wapas aane par agar multiple periods miss huye hain toh loop chalega
                if (list[0].issueNumber !== lastProcessed) {
+                  // Pehle check karein ki purane pending results kya rahe
+                  list.forEach(latestItem => {
+                      updateHistoryWithResult(latestItem);
+                  });
+
                   lastProcessed = list[0].issueNumber;
-                  totalAnalyzedCount++; // Increment analyzed on every new period
-                  updateHistoryWithResult(list[0]);
+                  totalAnalyzedCount++;
                   runCalculatorAI(list);
                   updateAnalyzedUI();
                }
@@ -176,20 +188,26 @@
          }
 
          function updateHistoryWithResult(latest) {
-            const actual = parseInt(latest.number) <= 4 ? 'SMALL' : 'BIG';
+            const actualSize = parseInt(latest.number) <= 4 ? 'SMALL' : 'BIG';
+            let changed = false;
             historyDB.forEach(item => {
                if (item.period === latest.issueNumber && item.status === 'pending') {
-                  item.status = (item.prediction === actual) ? 'WIN' : 'LOSS';
+                  item.status = (item.prediction === actualSize) ? 'WIN' : 'LOSS';
                   item.actual = latest.number;
+                  changed = true;
                }
             });
-            renderHistory();
+            if(changed) {
+               localStorage.setItem('premium_unlimited_db', JSON.stringify(historyDB));
+               renderHistory();
+            }
          }
 
          function saveLog(period, prediction, numbers) {
             if (!historyDB.find(x => x.period === period)) {
                historyDB.unshift({ period, prediction, numbers, status: 'pending', actual: '?' });
                localStorage.setItem('premium_unlimited_db', JSON.stringify(historyDB));
+               renderHistory();
             }
          }
 
