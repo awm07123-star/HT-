@@ -83,7 +83,7 @@
             setInterval(syncEngine, 3000);
          }
 
-         // BACKGROUND SYNC LOGIC: Jab aap wapas app par aayenge ye turant update karega
+         // BACKGROUND RECOVERY: Jab tab wapas open ho toh turant sync kare
          document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === 'visible') {
                syncEngine(); 
@@ -112,7 +112,6 @@
 
                totalAnalyzedCount = list.length;
                updateAnalyzedUI();
-               
                runCalculatorAI(list);
                lastProcessed = list[0].issueNumber;
                renderHistory();
@@ -125,9 +124,8 @@
                const data = await response.json();
                const list = data.data.list;
                
-               // Background se wapas aane par agar multiple periods miss huye hain toh loop chalega
                if (list[0].issueNumber !== lastProcessed) {
-                  // Pehle check karein ki purane pending results kya rahe
+                  // Sabhi miss huye periods ko ek saath update karega (Win/Loss check)
                   list.forEach(latestItem => {
                       updateHistoryWithResult(latestItem);
                   });
