@@ -18,9 +18,44 @@
          .history-list-scroll::-webkit-scrollbar { width: 5px; }
          .history-list-scroll::-webkit-scrollbar-thumb { background: var(--premium-pink); border-radius: 10px; }
          .stat-card { background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; }
+         
+         #floating-window { 
+            position: fixed; 
+            top: 150px; 
+            left: 20px; 
+            z-index: 9999; 
+            touch-action: none; 
+            cursor: move;
+            user-select: none;
+         }
+         .copy-btn {
+            background: rgba(255, 0, 122, 0.2);
+            border: 1px solid var(--premium-pink);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: bold;
+            transition: all 0.2s;
+         }
+         .copy-btn:active { transform: scale(0.9); background: var(--premium-pink); }
       </style>
    </head>
    <body class="p-4 flex flex-col items-center">
+      
+      <div id="floating-window">
+          <div class="premium-frame p-3" style="width: 130px; background: rgba(5, 5, 10, 0.95); border: 2px solid #ffcc00; box-shadow: 0 0 15px rgba(255, 204, 0, 0.4); border-radius: 16px;">
+              <div class="text-[9px] text-gray-400 font-bold mb-2 flex justify-between items-center tracking-widest">
+                  <span style="font-family: 'Orbitron';">HELPER</span>
+                  <i class="fas fa-arrows-alt text-yellow-500"></i>
+              </div>
+              <div class="text-center">
+                  <div id="cycle-text" class="text-lg font-black italic" style="font-family: 'Orbitron';">ORIGINAL</div>
+                  <div class="flex justify-center gap-1 mt-2" id="cycle-dots"></div>
+              </div>
+          </div>
+      </div>
+
       <div class="w-full max-w-md space-y-4">
          <div class="text-center py-6">
             <h1 class="text-3xl font-black tracking-tighter" style="font-family: 'Orbitron', sans-serif;">
@@ -52,6 +87,13 @@
                   <div id="current-period" class="text-lg font-bold text-white">----</div>
                </div>
             </div>
+
+            <div class="flex justify-end mb-2">
+               <button onclick="copyGenesisDetails()" class="copy-btn">
+                  <i class="fas fa-copy mr-1"></i> COPY
+               </button>
+            </div>
+
             <div id="prediction-result" class="text-5xl font-black italic mb-2 text-white">SCANNING...</div>
             <div id="prediction-numbers" class="flex justify-center gap-2 mb-4">
                <span class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm font-bold">?</span>
@@ -77,17 +119,36 @@
          let historyDB = JSON.parse(localStorage.getItem('premium_unlimited_db')) || [];
          let lastProcessed = null;
          let totalAnalyzedCount = 0;
+         let currentFullPeriod = "";
+         let currentPrediction = "";
+
+         let cycleIndex = 0;
+         const cycleStates = ["ORIGINAL", "ORIGINAL", "OPPOSITE", "OPPOSITE"];
+
+         function updateFloatingCycle() {
+             const textEl = document.getElementById('cycle-text');
+             const dotsEl = document.getElementById('cycle-dots');
+             const currentState = cycleStates[cycleIndex];
+             textEl.textContent = currentState;
+             textEl.style.color = currentState === "ORIGINAL" ? "#ffcc00" : "#ff007a";
+             let dotsHtml = '';
+             for(let i=0; i<4; i++) {
+                 let dotColor = i < 2 ? "bg-yellow-500" : "bg-pink-500";
+                 let active = (i === cycleIndex) ? "opacity-100 scale-125 shadow-[0_0_8px_white]" : "opacity-20 scale-90";
+                 dotsHtml += `<span class="w-2 h-2 rounded-full ${dotColor} ${active} transition-all duration-300"></span>`;
+             }
+             dotsEl.innerHTML = dotsHtml;
+             cycleIndex = (cycleIndex + 1) % 4;
+         }
 
          async function initApp() {
-            await syncEngine(); // First load
+            updateFloatingCycle();
+            await syncEngine();
             setInterval(syncEngine, 3000);
          }
 
-         // Tab focus aate hi instant sync
          document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === 'visible') {
-               syncEngine(); 
-            }
+            if (document.visibilityState === 'visible') syncEngine();
          });
 
          async function syncEngine() {
@@ -95,13 +156,13 @@
                const response = await fetch(`${API_URL}?t=${Date.now()}`);
                const data = await response.json();
                const list = data.data.list;
-               
                if (list[0].issueNumber !== lastProcessed) {
                   processData(list);
                   lastProcessed = list[0].issueNumber;
                   totalAnalyzedCount = list.length;
                   updateAnalyzedUI();
                   runCalculatorAI(list);
+                  updateFloatingCycle();
                }
             } catch (e) {}
          }
@@ -111,29 +172,20 @@
             list.forEach(item => {
                const idx = historyDB.findIndex(x => x.period === item.issueNumber);
                const actualSize = parseInt(item.number) <= 4 ? 'SMALL' : 'BIG';
-
                if (idx !== -1) {
-                  // Pending entry ko result mein badlo
                   if (historyDB[idx].status === 'pending') {
                      historyDB[idx].status = (historyDB[idx].prediction === actualSize) ? 'WIN' : 'LOSS';
                      historyDB[idx].actual = item.number;
                      changed = true;
                   }
                } else {
-                  // Naya period jo prediction mein nahi tha (Gap filler) -> Mark as DATA
                   historyDB.unshift({
-                     period: item.issueNumber,
-                     prediction: actualSize,
-                     numbers: [item.number],
-                     status: 'DATA',
-                     actual: item.number
+                     period: item.issueNumber, prediction: actualSize, numbers: [item.number], status: 'DATA', actual: item.number
                   });
                   changed = true;
                }
             });
-
             if (changed) {
-               // Sort and clean
                historyDB = historyDB.sort((a,b) => b.period.localeCompare(a.period)).slice(0, 100);
                localStorage.setItem('premium_unlimited_db', JSON.stringify(historyDB));
                renderHistory();
@@ -147,8 +199,8 @@
          function runCalculatorAI(list) {
             const last100 = list.map(x => ({ num: parseInt(x.number), size: parseInt(x.number) <= 4 ? 'SMALL' : 'BIG' }));
             const nextP = (BigInt(list[0].issueNumber) + 1n).toString();
+            currentFullPeriod = nextP;
 
-            // AI LOGIC (No changes)
             let crackerVote = "BIG";
             const streak = last100.slice(0, 5);
             if (streak.every(x => x.size === streak[0].size)) crackerVote = streak[0].size;
@@ -161,6 +213,7 @@
             let bPoints = (crackerVote === 'BIG' ? 40 : 0) + (ai2Vote === 'BIG' ? 40 : 0) + (ai3Vote === 'BIG' ? 20 : 0);
             
             const verdict = sPoints > bPoints ? "SMALL" : "BIG";
+            currentPrediction = verdict;
             const confidence = Math.max(sPoints, bPoints);
             const pool = verdict === "BIG" ? [5, 6, 7, 8, 9] : [0, 1, 2, 3, 4];
             const nums = pool.sort(() => .5 - Math.random()).slice(0, 2);
@@ -181,6 +234,22 @@
             ).join('');
          }
 
+         function copyGenesisDetails() {
+            const idText = currentFullPeriod || "0000000000000000";
+            const colorText = currentPrediction || "WAITING";
+            const emoji = colorText === "BIG" ? "🟡" : "🔵";
+            
+            const textToCopy = `🩸 𝐆Ξ𝐍Ξ𝐒𝐈𝐒 𝐀𝐈 𝐎𝐅𝐅𝐈𝐂𝐈𝐀𝐋 🩸\n\n🩸 𝗜𝗗 : ${idText}\n🩸 𝗖𝗢𝗟𝗢𝗥 : ${emoji} ${colorText}\n🩸 𝗖𝗢𝗡𝗙  : 𝕰𝖃𝕿𝕽𝕰𝕸𝕰\n━━━━━━━━━━━━━━━━━━\n⚙️ 𝗚𝗘𝗡𝗘𝗦𝗜𝗦 𝗠𝗔𝗞𝗜𝗡𝗚 𝗖𝗢𝗥𝗘`;
+            
+            navigator.clipboard.writeText(textToCopy).then(() => {
+               const btn = document.querySelector('.copy-btn');
+               btn.innerHTML = '<i class="fas fa-check mr-1"></i> COPIED!';
+               setTimeout(() => {
+                  btn.innerHTML = '<i class="fas fa-copy mr-1"></i> COPY';
+               }, 2000);
+            });
+         }
+
          function saveLog(period, prediction, numbers) {
             if (!historyDB.find(x => x.period === period)) {
                historyDB.unshift({ period, prediction, numbers, status: 'pending', actual: '?' });
@@ -195,7 +264,6 @@
             const losses = historyDB.filter(i => i.status === 'LOSS').length;
             const total = wins + losses;
             document.getElementById('accuracy').textContent = total > 0 ? Math.round((wins/total)*100)+'%' : '0%';
-            
             listEl.innerHTML = historyDB.map(item => `
                <div class="p-4 flex justify-between items-center ${item.status === 'WIN' ? 'bg-green-500/10' : item.status === 'LOSS' ? 'bg-red-500/10' : 'bg-white/5'}">
                   <div>
@@ -221,6 +289,30 @@
             updateAnalyzedUI();
             renderHistory();
          }
+
+         const dragItem = document.querySelector("#floating-window");
+         let active = false, currentX, currentY, initialX, initialY, xOffset = 0, yOffset = 0;
+         function dragStart(e) {
+            initialX = (e.type === "touchstart" ? e.touches[0].clientX : e.clientX) - xOffset;
+            initialY = (e.type === "touchstart" ? e.touches[0].clientY : e.clientY) - yOffset;
+            if (e.target.closest("#floating-window")) active = true;
+         }
+         function dragEnd() { initialX = currentX; initialY = currentY; active = false; }
+         function drag(e) {
+            if (active) {
+               e.preventDefault();
+               currentX = (e.type === "touchmove" ? e.touches[0].clientX : e.clientX) - initialX;
+               currentY = (e.type === "touchmove" ? e.touches[0].clientY : e.clientY) - initialY;
+               xOffset = currentX; yOffset = currentY;
+               dragItem.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
+            }
+         }
+         dragItem.addEventListener("touchstart", dragStart, false);
+         window.addEventListener("touchend", dragEnd, false);
+         window.addEventListener("touchmove", drag, false);
+         dragItem.addEventListener("mousedown", dragStart, false);
+         window.addEventListener("mouseup", dragEnd, false);
+         window.addEventListener("mousemove", drag, false);
 
          initApp();
       </script>
