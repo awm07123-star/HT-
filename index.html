@@ -145,7 +145,6 @@
                num: parseInt(x.number), 
                size: parseInt(x.number) <= 4 ? 'SMALL' : 'BIG' 
             }));
-            const lastPeriodNum = parseInt(list[0].issueNumber.slice(-1));
             const nextP = (BigInt(list[0].issueNumber) + 1n).toString();
 
             // AI CRACKER (40%)
@@ -159,13 +158,15 @@
             } else if (isZigZag) {
                crackerVote = recent[0] === "BIG" ? "SMALL" : "BIG";
             } else if (recent[0] === recent[1] && recent[0] !== recent[2]) {
-               crackerVote = recent[2]; // Sandwich (2-1-2)
+               crackerVote = recent[2];
             } else {
                crackerVote = Math.random() > 0.5 ? "BIG" : "SMALL";
             }
 
-            // AI 2 (40%)
-            let ai2Vote = lastPeriodNum <= 4 ? "SMALL" : "BIG";
+            // AI 2 (40%) - based on current period's last digit
+            const currentPeriod = list[0].issueNumber;
+            const lastDigit = parseInt(currentPeriod.slice(-1));
+            let ai2Vote = lastDigit <= 4 ? "SMALL" : "BIG";
 
             // AI 3 (20%)
             const last5 = last100.slice(0, 5);
